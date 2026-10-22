@@ -58,7 +58,7 @@ jobs:
       # policy repository controls the pin.
       - name: Fetch and verify the pinned observer build (sha256 pin only)
         env:
-          VERIFY_URL: https://github.com/sbo-ci-test/policy/releases/download/observer-1edaa3ef2/observer-1edaa3ef2-linux-amd64
+          VERIFY_URL: https://github.com/sbo-ci-test/policy/releases/download/observer-1edaa3ef2-tampered/observer-1edaa3ef2-linux-amd64
           VERIFY_SHA256: 52c48f25b4277fb4e26d47971b19862e8dd5ff6855fcd226ea9da244979fc35c
         run: |
           set -euo pipefail
