@@ -1,0 +1,6 @@
+# observer security verify: CI policy for the sbo-ci-test acceptance run.
+# Lives in the protected policy repository only; verify refuses a policy
+# inside the repository under test and ignores any the pull request brings.
+version = 1
+mode = "enforce"
+fixture_paths = ["**/testdata/**", "**/fixtures/**", "**/__fixtures__/**", "**/test-fixtures/**"]
