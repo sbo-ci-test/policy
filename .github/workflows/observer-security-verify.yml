@@ -14,9 +14,12 @@
 # runs anything from it), fetches the observer release pinned below by version,
 # SHA-256 and vendor Ed25519 signature, reads the policy from the protected
 # repository at a pinned commit, and runs `observer security verify`. It holds
-# no secrets and a read-only token. The upload job only consumes the verdict
-# job's SARIF artifact; an upload failure (a fork's read-only token) is a
-# warning, never the verdict.
+# no secrets and a read-only token. It also fetches the AI change record notes
+# (refs/notes/observer) and checks them against the keys file kept in the
+# protected repository. The upload job only consumes the verdict job's SARIF
+# artifact. A fork pull request's upload may fail on a private repository (its
+# token cannot write code scanning there); on a public one it went through in
+# the live run. Either way an upload failure is a warning, never the verdict.
 name: observer-security-verify
 
 on:
@@ -45,9 +48,21 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: sbo-ci-test/policy
-          ref: afe2f4ae72995f61e9d8f43ddc10f5f2b6e1abe4
+          ref: 760c055ee2142d56172a52b647fec48dc0a6e293
           persist-credentials: false
           path: policy
+
+      - name: Fetch the AI change record notes
+        env:
+          VERIFY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$VERIFY_TOKEN" | base64 -w0)"
+          if git -C target -c "http.extraheader=AUTHORIZATION: basic $auth" fetch --no-tags --quiet origin '+refs/notes/observer:refs/notes/observer'; then
+            echo "change record notes fetched"
+          else
+            echo "::notice::no refs/notes/observer on this repository: every commit reads unknown_provenance"
+          fi
 
       # KNOWN DIFFERENCE from Observer's shipped template (internal/secverify
       # template.go): the shipped step fetches a vendor-signed release archive
@@ -58,8 +73,8 @@ jobs:
       # policy repository controls the pin.
       - name: Fetch and verify the pinned observer build (sha256 pin only)
         env:
-          VERIFY_URL: https://github.com/sbo-ci-test/policy/releases/download/observer-1edaa3ef2/observer-1edaa3ef2-linux-amd64
-          VERIFY_SHA256: 52c48f25b4277fb4e26d47971b19862e8dd5ff6855fcd226ea9da244979fc35c
+          VERIFY_URL: https://github.com/sbo-ci-test/policy/releases/download/observer-a4acb0d73/observer-a4acb0d73-linux-amd64
+          VERIFY_SHA256: 151a9bc7dcf660ead88436ad19856ae59d322e943110ea1b4b5fc2e5f24cd33b
         run: |
           set -euo pipefail
           dir="$RUNNER_TEMP/observer"
@@ -77,11 +92,16 @@ jobs:
           VERIFY_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
           set -euo pipefail
+          keys=()
+          if [ -f "policy/observer-change-keys.json" ]; then
+            keys=(--keys "policy/observer-change-keys.json")
+          fi
           "$RUNNER_TEMP/observer/observer" security verify \
             --repo target \
             --base "$VERIFY_BASE" \
             --head "$VERIFY_HEAD" \
             --policy "policy/observer-security-ci.toml" \
+            "${keys[@]}" \
             --sarif observer-security.sarif
 
       - name: Keep the SARIF for the upload job
@@ -113,7 +133,7 @@ jobs:
         with:
           name: observer-security-sarif
 
-      - name: Upload to code scanning (a failure here is a warning, never the verdict)
+      - name: Upload to code scanning (a fork PR may fail here on a private repository; a warning, never the verdict)
         if: steps.fetch.outcome == 'success'
         continue-on-error: true
         uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
